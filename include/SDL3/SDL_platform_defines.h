@@ -60,6 +60,12 @@
 #undef __LINUX__
 #define __LINUX__   1
 #endif
+/* openharmony  */
+#if (defined(OHOS) || defined(__OHOS__))
+#undef __OHOS__
+#undef __LINUX__ /* do we need to do this? */
+#define __OHOS__   1
+#endif
 #if defined(ANDROID) || defined(__ANDROID__)
 #undef __ANDROID__
 #undef __LINUX__ /* do we need to do this? */

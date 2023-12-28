@@ -45,6 +45,8 @@
 #include "SDL_build_config_ios.h"
 #elif defined(__ANDROID__)
 #include "SDL_build_config_android.h"
+#elif defined(__OHOS__)
+#include "SDL_build_config_ohos.h"
 #elif defined(__EMSCRIPTEN__)
 #include "SDL_build_config_emscripten.h"
 #elif defined(__NGAGE__)

@@ -581,6 +581,8 @@ typedef struct PLATFORM_hid_device_ PLATFORM_hid_device;
 #include "SDL_hidapi_windows.h"
 #elif defined(__ANDROID__)
 #include "SDL_hidapi_android.h"
+#elif defined(__OHOS__)
+#include "SDL_hidapi_ohos.h"
 #elif defined(__IOS__) || defined(__TVOS__)
 #include "SDL_hidapi_ios.h"
 #endif

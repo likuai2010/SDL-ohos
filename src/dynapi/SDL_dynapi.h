@@ -47,6 +47,8 @@
 #define SDL_DYNAMIC_API 0
 #elif defined(__ANDROID__) /* probably not useful on Android. */
 #define SDL_DYNAMIC_API 0
+#elif defined(__OHOS__) /* probably not useful on ohos. */
+#define SDL_DYNAMIC_API 0
 #elif defined(__EMSCRIPTEN__) && __EMSCRIPTEN__ /* probably not useful on Emscripten. */
 #define SDL_DYNAMIC_API 0
 #elif defined(SDL_BUILDING_WINRT) && SDL_BUILDING_WINRT /* probably not useful on WinRT, given current .dll loading restrictions */

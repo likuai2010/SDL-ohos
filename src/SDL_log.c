@@ -36,6 +36,10 @@
 #include <android/log.h>
 #endif
 
+#ifdef __OHOS__
+#include <hilog/log.h>
+#endif
+
 #include "stdlib/SDL_vacopy.h"
 
 /* The size of the stack buffer to use for rendering log messages. */
