@@ -160,6 +160,7 @@
 
 /* Enable various threading systems */
 #define SDL_THREAD_PTHREAD  1
+#define SDL_THREAD_PTHREAD_RECURSIVE_MUTEX  1
 
 /* Enable various timer systems */
 #define SDL_TIMER_UNIX  1
@@ -188,7 +189,9 @@
 #define SDL_EVENTS_DISABLED 1
 #define SDL_HAPTIC_DISABLED 1
 #define SDL_VIDEO_DISABLED 1
-#define SDL_AUDIO_DISABLED 1
+#define SDL_AUDIO_DRIVER_OHOS   1
+// 启用音频
+//#define SDL_AUDIO_DISABLED 1
 
 #define SDL_SENSOR_DISABLED 1
 #define SDL_VIDEO_DRIVER_DUMMY  1

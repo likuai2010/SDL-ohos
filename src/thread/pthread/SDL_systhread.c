@@ -158,13 +158,15 @@ void SDL_SYS_SetupThread(const char *name)
         sigaddset(&mask, sig_list[i]);
     }
     pthread_sigmask(SIG_BLOCK, &mask, 0);
-
+    // ohos not export pthread_setcanceltype
+#ifndef __OHOS__
 #ifdef PTHREAD_CANCEL_ASYNCHRONOUS
     /* Allow ourselves to be asynchronously cancelled */
     {
         int oldstate;
         pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, &oldstate);
     }
+#endif
 #endif
 }
 

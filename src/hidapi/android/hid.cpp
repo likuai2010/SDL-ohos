@@ -107,8 +107,8 @@ class hid_device_ref
 public:
 	hid_device_ref( T *pObject = nullptr ) : m_pObject( nullptr )
 	{
-		SetObject( pObject );
-	}
+            SetObject(pObject);
+    }
 
 	hid_device_ref( const hid_device_ref &rhs ) : m_pObject( nullptr )
 	{
@@ -137,8 +137,8 @@ public:
 
 	hid_device_ref &operator =( T *pObject )
 	{
-		SetObject( pObject );
-		return *this;
+                SetObject(pObject);
+                return *this;
 	}
 
 	hid_device_ref &operator =( const hid_device_ref &rhs )
@@ -175,8 +175,8 @@ public:
 	}
 	~hid_mutex_guard()
 	{
-		pthread_mutex_unlock( m_pMutex );
-	}
+                pthread_mutex_unlock(m_pMutex);
+        }
 
 private:
 	pthread_mutex_t *m_pMutex;
@@ -450,9 +450,9 @@ public:
 
 	~CHIDDevice()
 	{
-		FreeHIDDeviceInfo( m_pInfo );
+                FreeHIDDeviceInfo(m_pInfo);
 
-		// Note that we don't delete m_pDevice, as the app may still have a reference to it
+                // Note that we don't delete m_pDevice, as the app may still have a reference to it
 	}
 
 	int IncrementRefCount()
@@ -645,6 +645,7 @@ public:
 
 	int ReadReport( unsigned char *pData, size_t nDataLen, bool bFeature )
 	{
+
 		// Make sure thread is attached to JVM/env
 		JNIEnv *env;
 		g_JVM->AttachCurrentThread( &env, NULL );

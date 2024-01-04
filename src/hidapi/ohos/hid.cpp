@@ -20,29 +20,33 @@
 */
 #include "SDL_internal.h"
 
-// Purpose: A wrapper implementing "HID" API for Android
+// Purpose: A wrapper implementing "HID" API for OHOS
 //
-//          This layer glues the hidapi API to Android's USB and BLE stack.
+//          This layer glues the hidapi API to OHOS's USB and BLE stack.
 
 #include "hid.h"
 
 // Common to stub version and non-stub version of functions
 #include <hilog/log.h>
 #include <node_api.h>
+#include <sys/time.h>
+#include <napi/native_api.h>
+#include <sys/select.h>
 
 #define TAG "hidapi"
 
 // Have error log always available
-#define LOGE(...)
+#define LOGE(...) OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "hid", __VA_ARGS__)
 
 #ifdef DEBUG
-#define LOGV(...)
-#define LOGD(...)
+#define LOGV(...)  OH_LOG_Print(LOG_APP, LOG_INFO,LOG_DOMAIN, "hid" __VA_ARGS__)
+#define LOGD(...)  OH_LOG_Print(LOG_APP, LOG_DEBUG,LOG_DOMAIN, "hid" __VA_ARGS__)
 #else
 #define LOGV(...)
 #define LOGD(...)
 #endif
 
+#define OHOSSDKVersion 9
 #define SDL_JAVA_PREFIX                             org_libsdl_app
 #define CONCAT1(prefix, class, function)            CONCAT2(prefix, class, function)
 #define CONCAT2(prefix, class, function)            Java_##prefix##_##class##_##function
@@ -69,7 +73,7 @@ extern "C" {
 #define hid_get_product_string       PLATFORM_hid_get_product_string
 #define hid_get_report_descriptor    PLATFORM_hid_get_report_descriptor
 #define hid_get_serial_number_string PLATFORM_hid_get_serial_number_string
-#define hid_init PLATFORM_hid_init
+#define hid_init                     PLATFORM_hid_init
 #define hid_open_path                PLATFORM_hid_open_path
 #define hid_open                     PLATFORM_hid_open
 #define hid_read                     PLATFORM_hid_read
@@ -94,7 +98,7 @@ struct hid_device_
     int m_nId;
     int m_nDeviceRefCount;
 };
-
+static napi_env env = nullptr;
 static pthread_key_t g_ThreadKey;
 
 template <class T>
@@ -305,12 +309,12 @@ class hid_buffer_pool
     hid_buffer_entry *m_pFree;
 };
 
-static char *CreateStringFromJString(napi_env *env, const napi_value &sString)
+static char *CreateStringFromJString(napi_env env, const napi_value &sString)
 {
-    return "";
+    return nullptr;
 }
 
-static wchar_t *CreateWStringFromJString(napi_env *env, const napi_value &sString)
+static wchar_t *CreateWStringFromJString(napi_env env, const napi_value &sString)
 {
     return nullptr;
 }
@@ -344,6 +348,14 @@ static void FreeHIDDeviceInfo(hid_device_info *pInfo)
     delete pInfo;
 }
 
+static napi_ref g_HIDDeviceManagerCallbackClass;
+static napi_value g_HIDDeviceManagerCallbackHandler;
+static napi_ref g_midHIDDeviceManagerInitialize;
+static napi_ref g_midHIDDeviceManagerOpen;
+static napi_ref g_midHIDDeviceManagerWriteReport;
+static napi_ref g_midHIDDeviceManagerReadReport;
+static napi_ref g_midHIDDeviceManagerClose;
+
 static bool g_initialized = false;
 
 static uint64_t get_timespec_ms(const struct timespec &ts)
@@ -351,8 +363,14 @@ static uint64_t get_timespec_ms(const struct timespec &ts)
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-static void ExceptionCheck(napi_env *env, const char *pszClassName, const char *pszMethodName)
+static void ExceptionCheck(napi_env env, const char *pszClassName, const char *pszMethodName)
 {
+    napi_value errorInfo;
+    napi_get_and_clear_last_exception(env, &errorInfo);
+    LOGE( "%{public}s%{public}s{public}%s threw an exception: %{public}s",
+    			pszClassName ? pszClassName : "",
+    			pszClassName ? "::" : "",
+    			pszMethodName, "");
 }
 
 class CHIDDevice
@@ -364,11 +382,11 @@ class CHIDDevice
         m_pInfo = pInfo;
 
         // The Bluetooth Steam Controller needs special handling
-        //const int VALVE_USB_VID x28DE;
-        //const int D0G_BLE2_PID = 0x1106;
-//        if (pInfo->vendor_id == VALVE_USB_VID && pInfo->product_id == D0G_BLE2_PID) {
-//            m_bIsBLESteamController = true;
-//        }
+        const int VALVE_USB_VID = 0x28DE;
+        const int D0G_BLE2_PID = 0x1106;
+        if (pInfo->vendor_id == VALVE_USB_VID && pInfo->product_id == D0G_BLE2_PID) {
+            m_bIsBLESteamController = true;
+        }
     }
 
     ~CHIDDevice()
@@ -411,16 +429,63 @@ class CHIDDevice
         return m_pDevice;
     }
 
-    void ExceptionCheck(napi_env *env, const char *pszMethodName)
+    void ExceptionCheck(napi_env env, const char *pszMethodName)
     {
         ::ExceptionCheck(env, "CHIDDevice", pszMethodName);
     }
 
     bool BOpen()
     {
-        // Make sure thread is attached to JVM/env
-        napi_env *env;
+
+        m_bIsWaitingForOpen = false;
+        napi_value jsCallback;
+        napi_value params[1];
+        napi_create_int32(env, m_nId, &params[0]);
+        napi_get_reference_value(env, g_midHIDDeviceManagerOpen, &jsCallback);
+        napi_value result;
+        napi_call_function(env, nullptr, jsCallback, 1, params, &result);
+        napi_get_value_bool(env, result, &m_bOpenResult);
+
+        ExceptionCheck( env, "BOpen" );
+
         LOGD("Creating device %d (%p), refCount = 1\n", m_pDevice->m_nId, m_pDevice);
+
+		if ( m_bIsWaitingForOpen )
+		{
+			hid_mutex_guard cvl( &m_cvLock );
+
+			const int OPEN_TIMEOUT_SECONDS = 60;
+			struct timespec ts, endtime;
+			clock_gettime( CLOCK_REALTIME, &ts );
+			endtime = ts;
+			endtime.tv_sec += OPEN_TIMEOUT_SECONDS;
+			do
+			{
+				if ( pthread_cond_timedwait( &m_cv, &m_cvLock, &endtime ) != 0 )
+				{
+					break;
+				}
+			}
+			while ( m_bIsWaitingForOpen && get_timespec_ms( ts ) < get_timespec_ms( endtime ) );
+		}
+
+		if ( !m_bOpenResult )
+		{
+			if ( m_bIsWaitingForOpen )
+			{
+				LOGV( "Device open failed - timed out waiting for device permission" );
+			}
+			else
+			{
+				LOGV( "Device open failed" );
+			}
+			return false;
+		}
+
+		m_pDevice = new hid_device;
+		m_pDevice->m_nId = m_nId;
+		m_pDevice->m_nDeviceRefCount = 1;
+		LOGD("Creating device %d (%p), refCount = 1\n", m_pDevice->m_nId, m_pDevice);
         return true;
     }
 
@@ -557,9 +622,32 @@ static void ThreadDestroyed(void *value)
 
 extern "C" {
 
+
 int hid_init(void)
 {
+    if ( !g_initialized && g_midHIDDeviceManagerInitialize )
+    	{
+    		// HIDAPI doesn't work well with OHOS < 8
+    		if (OHOSSDKVersion >= 8) {
 
+    			// Bluetooth is currently only used for Steam Controllers, so check that hint
+    			// before initializing Bluetooth, which will prompt the user for permission.
+    			bool init_usb = true;
+    			bool init_bluetooth = false;
+    			if (SDL_GetHintBoolean(SDL_HINT_JOYSTICK_HIDAPI_STEAM, SDL_FALSE)) {
+    				init_bluetooth = true;
+    			}
+                napi_value jsCallback;
+                napi_value params[2];
+                napi_get_boolean(env, init_usb, &params[0]);
+                napi_get_boolean(env, init_bluetooth, &params[1]);
+                napi_get_reference_value(env, g_midHIDDeviceManagerInitialize, &jsCallback);
+                napi_value result;
+                napi_call_function(env, nullptr, jsCallback, 2, params, &result);
+    			ExceptionCheck( env, NULL, "hid_init" );
+    		}
+    		g_initialized = true;	// Regardless of result, so it's only called once
+    	}
     return 0;
 }
 
@@ -645,7 +733,7 @@ int HID_API_EXPORT HID_API_CALL hid_write(hid_device *device, const unsigned cha
 static uint32_t getms()
 {
     struct timeval now;
-
+    gettimeofday(&now, NULL);
     return (uint32_t)(now.tv_sec * 1000 + now.tv_usec / 1000);
 }
 
